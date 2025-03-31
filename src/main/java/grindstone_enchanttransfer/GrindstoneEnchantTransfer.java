@@ -91,6 +91,16 @@ public class GrindstoneEnchantTransfer
 
         // Register our mod's ModConfigSpec so that FML can create and load the config file for us
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+
+
+
+        // --- Our Custom Event Handler Registration ---
+        // We will create this class next
+        NeoForge.EVENT_BUS.register(new GrindstoneInteractionHandler());
+        LOGGER.info("GrindsTone Enchant Transfer Mod Event Handler Registered");
+
+
+
     }
 
     private void commonSetup(final FMLCommonSetupEvent event)
