@@ -30,6 +30,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.bus.api.EventPriority;
+import net.minecraft.tags.EnchantmentTags;
 
 import java.util.Iterator;
 import java.util.Set;
@@ -53,7 +54,15 @@ class EnchantmentUtil {
 
 public class GrindstoneInteractionHandler {
 
-    private static final int XP_COST = 5; // Experience level cost
+    private static final int XP_COST = 4; // Experience level cost
+    private static final int COOLDOWN_TICKS = 25; // 1.5 seconds cooldown
+    private static final boolean ALLOW_CURSE_TRANSFER = false;
+
+    // ****** ADDITION 1: Cooldown Implementation ******
+    // Store the last tick a player successfully interacted
+    private static final Map<UUID, Long> lastInteractionTickMap = new HashMap<>();
+    // Cooldown duration in game ticks (20 ticks = 1 second)
+    // ****** END ADDITION 1 ******
 
     // Listen for Right Click Block interactions with high priority
     @SubscribeEvent(priority = EventPriority.HIGH)
@@ -61,267 +70,95 @@ public class GrindstoneInteractionHandler {
         Player player = event.getEntity();
         Level level = event.getLevel();
         BlockPos pos = event.getPos();
+        InteractionHand hand = event.getHand();
 
-
-        // --- Initial Checks ---
-        // Only run server-side
-        if (level.isClientSide()) {
-            return;
-        }
-        // Must be sneaking
-        if (!player.isShiftKeyDown()) {
-            return;
-        }
-        // Must be clicking a Grindstone
-        if (level.getBlockState(pos).getBlock() != Blocks.GRINDSTONE) {
-            //player.displayClientMessage(Component.literal("Bro das not a grindstone"), false);
-            return;
-        }
-
-
-        //Get Hand Items
+        // ... (Initial checks)
+        if (level.isClientSide() || !player.isShiftKeyDown() || level.getBlockState(pos).getBlock() != Blocks.GRINDSTONE || hand != InteractionHand.MAIN_HAND) { return; }
+        long currentTick = level.getGameTime();
+        UUID playerUUID = player.getUUID();
+        long lastInteractionTick = lastInteractionTickMap.getOrDefault(playerUUID, 0L);
+        if (currentTick < lastInteractionTick + COOLDOWN_TICKS) { return; }
         ItemStack mainHandItem = player.getMainHandItem();
         ItemStack offHandItem = player.getOffhandItem();
+        if (mainHandItem.isEmpty() || !mainHandItem.has(DataComponents.ENCHANTMENTS) || mainHandItem.getOrDefault(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY).isEmpty()) { return; }
+        if (offHandItem.getItem() != Items.BOOK) { return; }
+        if (!player.isCreative() && player.experienceLevel < XP_COST) { player.displayClientMessage(Component.translatable("container.repair.insufficient_xp_level", XP_COST), true); return; }
+        // ... (End checks) ...
 
-        // --- Item and Enchantment Checks ---
-        // Main hand: Must have an item and it must be enchanted
-        if (mainHandItem.isEmpty() || !mainHandItem.isEnchanted()) {
-            return;
-        }
-        // Offhand: Must be exactly one regular Book
-        if (offHandItem.getItem() != Items.BOOK || offHandItem.getCount() != 1) {
-            return;
-        }
 
-        player.displayClientMessage(Component.literal("Main Hand: " + mainHandItem), false);
-        player.displayClientMessage(Component.literal("Off Hand: " + offHandItem), false);
-
-        // ---------------------------------------------------------------------------------------------------
-
-        // 1. Get Enchantments from main Hand Item using DataComponents
-        // getOrDefault handles the case where the component might be missing (though you should check beforehand)
+        // --- Enchantment Processing ---
         ItemEnchantments currentEnchantments = mainHandItem.getOrDefault(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
-
-        // Double-check there are enchantments to transfer
-        if (currentEnchantments.isEmpty()) {
-            System.out.println("No enchantments found on main hand item.");
-            // Optionally send a message to the player
-            // player.sendSystemMessage(Component.literal("Item has no enchantments to transfer."));
-            return; // Stop processing
-        }
-
-
-        // 2. Identify the first enchantment to transfer
         Holder<Enchantment> enchantmentToTransfer = null;
         int levelToTransfer = 0;
 
-        // ItemEnchantments maintains insertion order, so the first entry in the iterator is reliable
-        // Use entrySet() which is guaranteed to preserve order.
+        // 2: Loop to find suitable enchantment using Tags
         for (Object2IntMap.Entry<Holder<Enchantment>> entry : currentEnchantments.entrySet()) {
-            enchantmentToTransfer = entry.getKey();
+            Holder<Enchantment> currentEnchantmentHolder = entry.getKey();
+
+            // Check if the enchantment Holder is tagged as a curse
+            // Use the Holder's 'is' method with the correct EnchantmentTag
+            if (currentEnchantmentHolder.is(EnchantmentTags.CURSE) && !ALLOW_CURSE_TRANSFER) {
+                System.out.println("Skipping curse (tag check): " + currentEnchantmentHolder.getRegisteredName()); // Optional debug
+                continue; // Skip this curse enchantment
+            }
+
+            // Found a suitable enchantment (either not a curse, or curses are allowed)
+            enchantmentToTransfer = currentEnchantmentHolder;
             levelToTransfer = entry.getIntValue();
-            break; // We only want the first one
+            break; // Stop searching, we found one to transfer
         }
 
-        // Should not happen if isEmpty() check passed, but safety first
+        // --- Post-Loop Check (Modification 3 remains the same) ---
         if (enchantmentToTransfer == null) {
-            System.err.println("Error: Could not find an enchantment to transfer despite isEmpty() being false.");
+            System.out.println("No non-curse enchantment found to transfer.");
+            if (!ALLOW_CURSE_TRANSFER) {
+                player.displayClientMessage(Component.literal("No enchantments found to transfer (excluding curses).").withStyle(net.minecraft.ChatFormatting.YELLOW), true);
+            } else {
+                player.displayClientMessage(Component.literal("No enchantments found to transfer.").withStyle(net.minecraft.ChatFormatting.YELLOW), true);
+            }
+            lastInteractionTickMap.put(playerUUID, currentTick);
             return;
         }
 
         System.out.println("Transferring Enchantment: " + enchantmentToTransfer.getRegisteredName() + " Level: " + levelToTransfer);
 
+        // ... (Create Book, Remaining Enchantments, Apply Changes, Feedback, Cooldown update, Event cancel remains the same) ...
 
-        // 3. Create the new Enchanted Book with the single enchantment
-        ItemStack enchantedBook = new ItemStack(Items.ENCHANTED_BOOK, 1); // Create a stack of 1 enchanted book
-
-        // --- Correction Start ---
-        // Create a mutable builder starting empty
+        ItemStack enchantedBook = new ItemStack(Items.ENCHANTED_BOOK, 1);
         ItemEnchantments.Mutable bookEnchantBuilder = new ItemEnchantments.Mutable(ItemEnchantments.EMPTY);
-        // Add the single enchantment we identified earlier
         bookEnchantBuilder.set(enchantmentToTransfer, levelToTransfer);
-        // Build the final immutable ItemEnchantments object
-        ItemEnchantments bookEnchantment = bookEnchantBuilder.toImmutable();
-        // --- Correction End ---
+        enchantedBook.set(DataComponents.STORED_ENCHANTMENTS, bookEnchantBuilder.toImmutable());
 
-        // Apply the built enchantments to the Enchanted Book using the correct component
-        enchantedBook.set(DataComponents.STORED_ENCHANTMENTS, bookEnchantment);
-
-        System.out.println("Created Enchanted Book with: " + bookEnchantment);
-
-
-        // 4. Create the set of remaining enchantments for the original item
         ItemEnchantments.Mutable remainingEnchantmentsMutable = new ItemEnchantments.Mutable(ItemEnchantments.EMPTY);
-        boolean firstSkipped = false;
+        boolean skippedTransferred = false;
+        Holder<Enchantment> transferredKey = enchantmentToTransfer;
         for (Object2IntMap.Entry<Holder<Enchantment>> entry : currentEnchantments.entrySet()) {
-            // Skip the first enchantment (the one we transferred)
-            if (!firstSkipped) {
-                firstSkipped = true;
+            if (!skippedTransferred && entry.getKey().equals(transferredKey)) {
+                skippedTransferred = true;
                 continue;
             }
-            // Add all other enchantments to the mutable builder
             remainingEnchantmentsMutable.set(entry.getKey(), entry.getIntValue());
         }
-        // Build the final immutable set for the item
         ItemEnchantments remainingEnchantments = remainingEnchantmentsMutable.toImmutable();
 
-        System.out.println("Remaining Enchantments for Original Item: " + remainingEnchantments);
-
-
-        // 5. Apply the remaining enchantments back to the main hand item
         mainHandItem.set(DataComponents.ENCHANTMENTS, remainingEnchantments);
-        // Optional: Grindstones usually remove repair cost penalty. You might want to do that too.
         mainHandItem.remove(DataComponents.REPAIR_COST);
-
-
-        // 6. Update the player's inventory
-        offHandItem.shrink(1); // Consume one book from the off-hand stack
-        player.setItemInHand(InteractionHand.OFF_HAND, enchantedBook); // Put the new enchanted book in the off-hand
-
-        // 7. Add feedback (optional but good practice)
-        level.playSound(null, player.blockPosition(), SoundEvents.GRINDSTONE_USE, SoundSource.BLOCKS, 1.0F, 1.0F);
-        level.playSound(null, player.blockPosition(), SoundEvents.ENCHANTMENT_TABLE_USE, SoundSource.BLOCKS, 1.0F, level.random.nextFloat() * 0.1F + 0.9F); // A little magic sound
-
-        System.out.println("Enchantment transfer successful!");
-
-
-
-
-        /*
-
-
-        // Get Enchant IDs
-        for (Holder<Enchantment> enchantmentHolder : enchantments.keySet()) {
-            ResourceLocation enchantmentID = enchantmentHolder.unwrapKey()
-                    .map(key -> key.location()) // Gets the ResourceLocation
-                    .orElse(null); // Fallback in case it's empty
-
-            if (enchantmentID != null) {
-                System.out.println("Enchantment ID: " + enchantmentID);
-            }
-        }
-
-
-        //Grab one Enchant
-        Optional<Object2IntMap.Entry<Holder<Enchantment>>> enchantmentToRemove = enchantments.entrySet().stream().findFirst();
-
-        if (enchantmentToRemove.isPresent()) {
-            Object2IntMap.Entry<Holder<Enchantment>> enchantment = enchantmentToRemove.get();
-
-            System.out.println("Enchantment To Remove ID: " + enchantment);
-
-            // Remove it if found
-            //enchantmentToRemove.ifPresent(enchantments::remove);
-
-
-
-        }
-
-
-
-        System.out.println("What actually matters-----------------");
-
-
-        System.out.println("Keyset:");
-        System.out.println(enchants.keySet());
-
-        System.out.println("EntrySet:");
-        System.out.println(enchants.entrySet());
-
-        System.out.println("toString:");
-        System.out.println(enchants.toString());
-
-
-        Map.Entry<String, Integer>[] enchantmentsArray = EnchantmentUtil.getEnchantmentsAsArray(mainHandItem.getTagEnchantments());
-
-        System.out.println(enchantmentsArray[0]);
-
-
-        //Set Enchantments on Book
-        EnchantmentHelper.setEnchantments(offHandItem, mainHandItem.getTagEnchantments());
-
-
-
-        // Get enchantments from the main-hand item
-        ItemEnchantments enchantments = mainHandItem.getTagEnchantments();
-
-        // Create a new Enchanted Book item
-        ItemStack enchantedBook = new ItemStack(Items.ENCHANTED_BOOK);
-
-        // Apply the enchantments to the Enchanted Book
-        EnchantmentHelper.setEnchantments(enchantedBook, enchantments);
-
-        // Replace the Book in the off-hand with the new Enchanted Book
-        offHandItem.setCount(0); // Remove the old book
-        player.setItemInHand(net.minecraft.world.InteractionHand.OFF_HAND, enchantedBook);
-        */
-
-
-        /*
-        // Get enchantments from main hand item
-        Map<Enchantment, Integer> enchantments = EnchantmentHelper.getEnchantments(mainHandItem);
-
-
-
-        // Find the first non-curse enchantment
-        Optional<Map.Entry<Enchantment, Integer>> enchantmentToTransfer = enchantments.entrySet()
-                .stream()
-                .filter(entry -> !entry.getKey().isCurse())
-                .findFirst(); // Get the first one found
-
-        // If no non-curse enchantment exists, do nothing
-        if (enchantmentToTransfer.isEmpty()) {
-            return;
-        }
-
-        // --- Experience Check ---
-        if (!player.isCreative() && player.experienceLevel < XP_COST) {
-            // Optional: Send player a message that they don't have enough XP
-            // player.displayClientMessage(Component.literal("Not enough experience!").withStyle(ChatFormatting.RED), true);
-            return;
-        }
-
-        */
-
-
-        // --- Perform the Transfer ---
-        /*
-        Enchantment enchantment = enchantmentToTransfer.get().getKey();
-        int levelValue = enchantmentToTransfer.get().getValue();
-
-        // 1. Create the new Enchanted Book
-        ItemStack enchantedBook = new ItemStack(Items.ENCHANTED_BOOK);
-        EnchantedBookItem.addEnchantment(enchantedBook, new EnchantmentInstance(enchantment, levelValue));
-
-        // 2. Consume the book in the off-hand
+        if (!player.isCreative()) { player.giveExperienceLevels(-XP_COST); }
         offHandItem.shrink(1);
-
-        // 3. Remove the specific enchantment from the main hand item
-        // Create a new map with all enchantments EXCEPT the one transferred
-        Map<Enchantment, Integer> remainingEnchantments = EnchantmentHelper.getEnchantments(mainHandItem); // Get a mutable copy
-        remainingEnchantments.remove(enchantment); // Remove the transferred one
-        EnchantmentHelper.setEnchantments(remainingEnchantments, mainHandItem); // Apply the remaining enchantments back
-
-        // 4. Deduct Experience (only if not in creative)
-        if (!player.isCreative() && player instanceof ServerPlayer serverPlayer) { // Need ServerPlayer for XP manipulation
-            serverPlayer.giveExperienceLevels(-XP_COST);
-            // Optional: Add some experience orbs as if disenchanting?
-            // GrindstoneMenu.handleExperience(level, pos, player.experienceLevel); // Example concept, needs refinement
-        }
-
-        // 5. Give the enchanted book to the player
         if (!player.getInventory().add(enchantedBook)) {
-            player.drop(enchantedBook, false); // Drop if inventory is full
+            player.drop(enchantedBook, false);
+            player.displayClientMessage(Component.literal("Inventory full! Enchanted book dropped.").withStyle(net.minecraft.ChatFormatting.YELLOW), true);
         }
 
-        // 6. Play Sounds
-        level.playSound(null, pos, SoundEvents.GRINDSTONE_USE, SoundSource.BLOCKS, 1.0F, 1.0F);
-        level.playSound(null, pos, SoundEvents.ENCHANTMENT_TABLE_USE, SoundSource.BLOCKS, 1.0F, level.random.nextFloat() * 0.1F + 0.9F);
+        level.playSound(null, player.blockPosition(), SoundEvents.GRINDSTONE_USE, SoundSource.BLOCKS, 1.0F, 1.0F);
+        level.playSound(null, player.blockPosition(), SoundEvents.ENCHANTMENT_TABLE_USE, SoundSource.BLOCKS, 1.0F, level.random.nextFloat() * 0.1F + 0.9F);
 
-        // 7. Cancel the original event (IMPORTANT: prevents Grindstone GUI from opening)
-        event.setCanceled(true);
-        // Signal that the interaction was successful on the server side
+        // System.out.println("Enchantment transfer successful!");
+        // player.displayClientMessage(Component.literal("Enchantment transferred!"), true);
+
+        lastInteractionTickMap.put(playerUUID, currentTick);
         event.setCancellationResult(InteractionResult.SUCCESS);
-        */
+        event.setCanceled(true);
+
     }
 }
