@@ -1,4 +1,4 @@
-package grindstone_enchanttransfer;
+package simple_enchant_transfer;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
@@ -17,18 +17,18 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
-@Mod(GrindstoneEnchantTransfer.MODID)
-public class GrindstoneEnchantTransfer
+@Mod(SimpleEnchantTransfer.MODID)
+public class SimpleEnchantTransfer
 {
     // Define mod id in a common place for everything to reference
-    public static final String MODID = "grindstone_enchant_transfer";
+    public static final String MODID = "simple_enchant_transfer";
     // Directly reference a slf4j logger
     private static final Logger LOGGER = LogUtils.getLogger();
 
 
     // The constructor for the mod class is the first code that is run when your mod is loaded.
     // FML will recognize some parameter types like IEventBus or ModContainer and pass them in automatically.
-    public GrindstoneEnchantTransfer(IEventBus modEventBus, ModContainer modContainer)
+    public SimpleEnchantTransfer(IEventBus modEventBus, ModContainer modContainer)
     {
         // Register the commonSetup method for modloading
         modEventBus.addListener(this::commonSetup);

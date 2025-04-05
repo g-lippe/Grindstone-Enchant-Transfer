@@ -1,4 +1,4 @@
-package grindstone_enchanttransfer;
+package simple_enchant_transfer;
 
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.minecraft.core.BlockPos;
