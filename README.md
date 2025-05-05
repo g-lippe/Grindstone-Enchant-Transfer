@@ -1,25 +1,19 @@
 
-Installation information
+Simple Enchant Transfer
 =======
 
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
+This is a lightweight Neoforge Mod that allows you to take out **individual enchantments** from your items, and convert them back into an *Enchanted Book*.
 
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
+Found a Golden Pickaxe with Efficiency III? Now you can transfer that enchantment to a another tool.
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
+It can be downloaded on [Modrinth](https://modrinth.com/mod/simple-enchant-transfer) for Minecraft 1.21.1
 
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
 
-Additional Resources: 
-==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
+
+
+### How to Use
+While Sneaking, Right Click on a Grindstone while having your Enchanted Item in your main hand, and at least one Book in your off-hand. It costs 3 XP levels to do this.
+
+### Curses
+
+Currently, the mod won't take out curses from the equipment, but it will still take out the enchantments from it. The functionality to take out curses is already there and will be an option in future versions.
